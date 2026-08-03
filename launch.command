@@ -25,15 +25,17 @@ echo "   fasih-analytics"
 echo "========================================"
 echo ""
 
-# Ask if user wants to relogin
-read -p "Force fresh login? (y/N): " relogin
-echo ""
-
-if [[ "$relogin" =~ ^[Yy]$ ]]; then
-    "$PYTHON_BIN" main.py --relogin
-else
-    "$PYTHON_BIN" main.py
+"$PYTHON_BIN" make_manual_session.py --from-clipboard
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "Could not create inputs/manual_session.json from the clipboard."
+    echo "Copy the Cookie header from Chrome DevTools and try again."
+    echo ""
+    read -n 1 -s -r -p "Press any key to close."
+    exit 1
 fi
+
+"$PYTHON_BIN" main.py
 
 echo ""
 echo "========================================"

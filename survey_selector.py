@@ -33,7 +33,16 @@ def save_survey_config(config: list):
 
     # Persist survey details (other_jadwal, startDate, endDate, title) in a
     # backup dict keyed by survey name so they survive account switches.
-    detail_keys = ("title", "startDate", "endDate", "other_jadwal")
+    detail_keys = (
+        "title",
+        "startDate",
+        "endDate",
+        "other_jadwal",
+        "surveyPeriodId",
+        "surveyPeriodName",
+        "surveyPeriodStartDate",
+        "surveyPeriodEndDate",
+    )
     backup = existing.get("_survey_details_backup", {})
     for entry in existing.get("selected_surveys", []):
         name = entry.get("name")
@@ -98,7 +107,16 @@ async def select_surveys(all_surveys: list) -> list:
 
     # Preserve existing schedule fields (startDate, endDate, other_jadwal) across re-selections.
     # Also pull from _survey_details_backup so fields survive account switches.
-    detail_keys = ("title", "startDate", "endDate", "other_jadwal")
+    detail_keys = (
+        "title",
+        "startDate",
+        "endDate",
+        "other_jadwal",
+        "surveyPeriodId",
+        "surveyPeriodName",
+        "surveyPeriodStartDate",
+        "surveyPeriodEndDate",
+    )
     existing_cfg = json.load(open(CONFIG_PATH)) if os.path.exists(CONFIG_PATH) else {}
     backup = existing_cfg.get("_survey_details_backup", {})
     prev_schedule = {
@@ -108,9 +126,6 @@ async def select_surveys(all_surveys: list) -> list:
     for name, details in backup.items():
         if name not in prev_schedule:
             prev_schedule[name] = details
-        else:
-            # backup fills in any keys missing from current config entry
-            prev_schedule[name] = {**details, **prev_schedule[name]}
 
     pemutakhiran_set = set(pemutakhiran_names)
     config = []
@@ -152,3 +167,59 @@ async def select_surveys(all_surveys: list) -> list:
     pemutakhiran_count = sum(1 for e in config if e["type"] == "pemutakhiran")
     print(f"\n✅ Saved: {pencacahan_count} pencacahan + {pemutakhiran_count} pemutakhiran | Title: {chart_title} | Palette: {selected_palette}\n")
     return config
+
+
+def _period_sort_key(period):
+    return (
+        period.get("startDate") or "",
+        period.get("endDate") or "",
+        period.get("createdAt") or "",
+    )
+
+
+async def select_survey_periods(survey_config: list, periods_by_survey: dict) -> list:
+    """
+    Let the user choose one survey period per selected survey.
+    Stores the chosen period id/name separately from startDate/endDate, which are
+    reserved for manual chart deadline overrides.
+    """
+    updated_config = []
+
+    for entry in survey_config:
+        survey_name = entry["name"]
+        periods = periods_by_survey.get(survey_name, [])
+        if not periods:
+            print(f"⚠️  No periods available for {survey_name}; keeping previous period config if any.")
+            updated_config.append(entry)
+            continue
+
+        periods = sorted(periods, key=_period_sort_key, reverse=True)
+        periods_by_id = {period["id"]: period for period in periods}
+        previous_period_id = entry.get("surveyPeriodId")
+        default_period_id = previous_period_id if previous_period_id in periods_by_id else periods[0]["id"]
+
+        selected_period_id = await inquirer.select(
+            message=f"Select period for {survey_name}:",
+            choices=[
+                {
+                    "name": period.get("name") or period["id"],
+                    "value": period["id"],
+                }
+                for period in periods
+            ],
+            default=default_period_id,
+        ).execute_async()
+
+        selected_period = periods_by_id[selected_period_id]
+        updated_entry = {
+            **entry,
+            "surveyPeriodId": selected_period["id"],
+            "surveyPeriodName": selected_period.get("name"),
+            "surveyPeriodStartDate": selected_period.get("startDate"),
+            "surveyPeriodEndDate": selected_period.get("endDate"),
+        }
+        updated_config.append(updated_entry)
+
+    save_survey_config(updated_config)
+    print("\n✅ Survey period choices saved to inputs/survey_config.json\n")
+    return updated_config

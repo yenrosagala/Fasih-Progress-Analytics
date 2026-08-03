@@ -1,5 +1,6 @@
 outputs/
-input/session_cache.json
+inputs/session_cache.json
+inputs/manual_session.json
 venv/
 __pycache__/
 *.pyc

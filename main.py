@@ -25,7 +25,7 @@ from adjust_survey import adjust_period, adjust_sample, adjust_deadline
 from transformer import json_to_df, pemutakhiran_json_to_df
 from data_loader import get_survey_name
 from plotter import generate_plots_2, generate_kabupaten_status_donut_dashboard
-from survey_selector import select_surveys
+from survey_selector import select_surveys, select_survey_periods
 from generate_pivot import main as generate_pivot
 
 async def main():
@@ -52,8 +52,13 @@ async def main():
     ].reset_index(drop=True)
 
     survey_id_dict = {i: j for i, j in zip(survey_collection_df['id'], survey_collection_df['name'])}
+    for col in ["regionGroupId", "survey_period_id", "startDate", "endDate"]:
+        if col not in survey_collection_df.columns:
+            survey_collection_df[col] = pd.NA
 
-    semaphore = asyncio.Semaphore(10)
+    max_concurrency = int(os.getenv("FASIH_MAX_CONCURRENCY", "10"))
+    semaphore = asyncio.Semaphore(max_concurrency)
+    print(f"🌐 Request concurrency: {max_concurrency}")
 
     # Load previously saved survey collection to compare dates
     _prev_csv = "outputs/csv/survey_collection_deadline_adjusted.csv"
@@ -66,6 +71,9 @@ async def main():
         except:
             return str(d)
 
+    survey_metadata = {}
+    periods_by_survey = {}
+
     # Fetch metadata (GET) concurrently
     async def fetch_metadata(i, j):
         async with semaphore:
@@ -76,29 +84,8 @@ async def main():
                 )
                 survey_data = survey_response.json()["data"]
                 periods = periods_response.json()["data"]
-                latest_period = periods[-1]
-
-                new_start = latest_period["startDate"]
-                new_end = latest_period["endDate"]
-
-                survey_collection_df.loc[
-                    survey_collection_df["id"] == i,
-                    ["regionGroupId", "survey_period_id", "startDate", "endDate"]
-                ] = [
-                    survey_data["regionGroupId"],
-                    latest_period["id"],
-                    new_start,
-                    new_end,
-                ]
-
-                # Collect date changes to print in summary later
-                if not prev_survey_df.empty and 'name' in prev_survey_df.columns:
-                    prev_row = prev_survey_df[prev_survey_df['name'] == j]
-                    if not prev_row.empty:
-                        old_start = prev_row['startDate'].values[0]
-                        old_end = prev_row['endDate'].values[0]
-                        if str(old_start) != str(new_start) or str(old_end) != str(new_end):
-                            date_changes.append((j, old_start, old_end, new_start, new_end))
+                survey_metadata[j] = survey_data
+                periods_by_survey[j] = periods
 
                 print(f"✅ Status 200 | {j}")
             except Exception as e:
@@ -107,6 +94,58 @@ async def main():
     # Run all metadata requests concurrently
     tasks = [fetch_metadata(i, j) for i, j in survey_id_dict.items()]
     await asyncio.gather(*tasks)
+
+    survey_config = await select_survey_periods(survey_config, periods_by_survey)
+    selected_names = [e['name'] for e in survey_config]
+    pencacahan_names = [e['name'] for e in survey_config if e['type'] == 'pencacahan']
+    pemutakhiran_names = [e['name'] for e in survey_config if e['type'] == 'pemutakhiran']
+    config_by_name = {entry["name"]: entry for entry in survey_config}
+
+    for survey_id, survey_name in survey_id_dict.items():
+        survey_data = survey_metadata.get(survey_name)
+        periods = periods_by_survey.get(survey_name, [])
+        selected_period_id = config_by_name.get(survey_name, {}).get("surveyPeriodId")
+        selected_period = next(
+            (period for period in periods if period.get("id") == selected_period_id),
+            None,
+        )
+        if not survey_data or not selected_period:
+            continue
+
+        new_start = selected_period["startDate"]
+        new_end = selected_period["endDate"]
+
+        survey_collection_df.loc[
+            survey_collection_df["id"] == survey_id,
+            ["regionGroupId", "survey_period_id", "startDate", "endDate"]
+        ] = [
+            survey_data["regionGroupId"],
+            selected_period["id"],
+            new_start,
+            new_end,
+        ]
+
+        # Collect date changes to print in summary later
+        if not prev_survey_df.empty and 'name' in prev_survey_df.columns:
+            prev_row = prev_survey_df[prev_survey_df['name'] == survey_name]
+            if not prev_row.empty:
+                old_start = prev_row['startDate'].values[0]
+                old_end = prev_row['endDate'].values[0]
+                if str(old_start) != str(new_start) or str(old_end) != str(new_end):
+                    date_changes.append((survey_name, old_start, old_end, new_start, new_end))
+
+    missing_period_mask = survey_collection_df['survey_period_id'].isna()
+    if missing_period_mask.any():
+        skipped_names = survey_collection_df.loc[missing_period_mask, 'name'].tolist()
+        print("\n⚠️ Skipping surveys with missing metadata after retries:")
+        for name in skipped_names:
+            print(f"  - {name}")
+        survey_collection_df = survey_collection_df.loc[~missing_period_mask].reset_index(drop=True)
+        pencacahan_names = [name for name in pencacahan_names if name in survey_collection_df['name'].tolist()]
+        pemutakhiran_names = [name for name in pemutakhiran_names if name in survey_collection_df['name'].tolist()]
+
+    if survey_collection_df.empty:
+        raise RuntimeError("No selected surveys have usable metadata. Try again later or select fewer surveys.")
 
     # Update period and save
     try:

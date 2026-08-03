@@ -8,6 +8,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from config import LOGIN_URL, SURVEY_PAGE_URL, survey_datatable_url
 
 COOKIE_CACHE_PATH = "inputs/session_cache.json"
+MANUAL_SESSION_PATH = "inputs/manual_session.json"
 _TEST_URL = survey_datatable_url
 _TEST_PAYLOAD = {"pageNumber": 0, "pageSize": 1, "sortBy": "CREATED_AT", "sortDirection": "DESC", "keywordSearch": ""}
 
@@ -26,6 +27,40 @@ def _load_session():
     return None, None
 
 
+def _parse_cookie_header(cookie_header):
+    cookies = {}
+    for part in cookie_header.split(";"):
+        if "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        cookies[name.strip()] = value.strip()
+    return cookies
+
+
+def _csrf_from_cookies(cookies):
+    from urllib.parse import unquote
+    for name, value in cookies.items():
+        if name.lower() in ["x-xsrf-token", "xsrf-token"]:
+            return unquote(value)
+    return None
+
+
+def _load_manual_session():
+    if not os.path.exists(MANUAL_SESSION_PATH):
+        return None, None
+
+    with open(MANUAL_SESSION_PATH) as f:
+        data = json.load(f)
+
+    cookies = data.get("cookies")
+    cookie_header = data.get("cookie_header")
+    if not cookies and cookie_header:
+        cookies = _parse_cookie_header(cookie_header)
+
+    csrf_token = data.get("csrf_token") or _csrf_from_cookies(cookies or {})
+    return cookies, csrf_token
+
+
 def _session_valid(cookies_dict, csrf_token):
     from config import BASE_HEADERS
     headers = {
@@ -41,6 +76,13 @@ def _session_valid(cookies_dict, csrf_token):
             timeout=httpx.Timeout(30, connect=15.0),
         )
         print(f"   Session check status: {response.status_code}")
+        body = response.text[:2000].lower()
+        if "bot-" in body or "sistem kami mendeteksi koneksi anda sebagai bot" in body:
+            print(
+                "   BPS/FASIH returned a bot-detection page. "
+                "Stop running the script and check access manually in a normal browser."
+            )
+            return False
         return response.status_code == 200
     except Exception as e:
         print(f"   Session check failed ({type(e).__name__}): {e}")
@@ -48,6 +90,15 @@ def _session_valid(cookies_dict, csrf_token):
 
 
 def get_cookies_and_csrf():
+    manual_cookies, manual_csrf_token = _load_manual_session()
+    if manual_cookies and manual_csrf_token:
+        print("🔄 Checking manual browser session...")
+        if _session_valid(manual_cookies, manual_csrf_token):
+            print("✅ Manual browser session valid.\n")
+            _save_session(manual_cookies, manual_csrf_token)
+            return manual_cookies, manual_csrf_token
+        print("⚠️  Manual browser session is not valid.\n")
+
     cookies, csrf_token = _load_session()
     if cookies and csrf_token:
         print("🔄 Checking cached session...")
@@ -63,17 +114,9 @@ def get_cookies_and_csrf():
     driver.get(LOGIN_URL)
     input("✅ After logging in completely, press ENTER to continue...")
 
-    # Navigate to the survey page so the WAF issues cookies for that path
+    # Navigate to the survey page so FASIH issues app cookies after manual login.
     driver.get(SURVEY_PAGE_URL)
-    time.sleep(3)  # Wait for WAF (F5) to fully set TS* session cookies
-
-    # Also hit the API URL directly so the WAF issues TS* cookies for the API path
-    driver.get(_TEST_URL.split('?')[0].replace('/datatable', ''))
-    time.sleep(2)
-
-    # Navigate back to the survey page for the final cookie snapshot
-    driver.get(SURVEY_PAGE_URL)
-    time.sleep(3)
+    time.sleep(5)
 
     selenium_cookies = driver.get_cookies()
     driver.quit()

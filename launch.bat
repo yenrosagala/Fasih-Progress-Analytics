@@ -24,14 +24,17 @@ echo    fasih-analytics
 echo ========================================
 echo.
 
-set /p relogin="Force fresh login? (y/N): "
-echo.
-
-if /i "%relogin%"=="y" (
-    "%PYTHON_BIN%" main.py --relogin
-) else (
-    "%PYTHON_BIN%" main.py
+"%PYTHON_BIN%" make_manual_session.py --from-clipboard
+if errorlevel 1 (
+    echo.
+    echo Could not create inputs\manual_session.json from the clipboard.
+    echo Copy the Cookie header from Chrome DevTools and try again.
+    echo.
+    pause
+    exit /b 1
 )
+
+"%PYTHON_BIN%" main.py
 
 echo.
 echo ========================================

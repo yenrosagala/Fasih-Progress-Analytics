@@ -1,5 +1,5 @@
-LOGIN_URL = "https://fasih-sm.bps.go.id"
 APP_BASE_URL = "https://fasih-sm.bps.go.id/app"
+LOGIN_URL = APP_BASE_URL
 API_BASE_URL = f"{APP_BASE_URL}/api"
 SURVEY_PAGE_URL = f"{APP_BASE_URL}/survey-collection/survey"
 

@@ -58,6 +58,42 @@ python main.py --relogin
 python main.py --title "Monitoring Maret 2026"
 ```
 
+### Catatan akses FASIH
+
+Jika FASIH/BPS menampilkan peringatan `BOT-...`, hentikan script dan coba buka FASIH secara manual dari browser biasa. Jika browser biasa bisa membuka FASIH tetapi browser Selenium terkena `BOT-...`, gunakan session dari browser biasa:
+
+1. Buka `https://fasih-sm.bps.go.id/app` di Chrome biasa dan login.
+2. Buka DevTools > Network, klik request API FASIH, lalu copy nilai header `Cookie`.
+3. Buat file `inputs/manual_session.json`:
+
+```json
+{
+  "cookie_header": "PASTE_COOKIE_HEADER_DI_SINI"
+}
+```
+
+Script akan membaca file itu lebih dulu dan tidak perlu membuka Selenium jika session valid.
+
+Untuk membuat file itu tanpa edit manual, jalankan helper:
+
+```bash
+./venv/bin/python make_manual_session.py --from-clipboard
+```
+
+Atau kirim header langsung:
+
+```bash
+./venv/bin/python make_manual_session.py --cookie-header "PASTE_COOKIE_HEADER_DI_SINI"
+```
+
+Di macOS dan Windows, `launch.command` / `launch.bat` juga akan mencoba membaca clipboard dan membuat session file otomatis sebelum menjalankan scraping.
+
+Jika FASIH mulai mengembalikan `504`, `429`, atau `BOT-...`, jalankan ulang dengan mode lebih pelan:
+
+```bash
+FASIH_MAX_CONCURRENCY=1 FASIH_REQUEST_INTERVAL=2 python main.py --relogin
+```
+
 ## Output
 
 - `outputs/csv/report_assignment.csv` — data progres & penugasan terbaru
