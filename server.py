@@ -604,6 +604,16 @@ async def auth_gate(request: Request, call_next):
     return resp
 
 
+# ponytail: the CSV button resolves ../csv/data_sample.csv from site/index.html;
+# the static mount only exposes outputs/site/, so serve the real file here.
+@app.get("/csv/data_sample.csv")
+async def data_sample_csv():
+    path = os.path.join("outputs", "csv", "data_sample.csv")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="CSV belum tersedia")
+    return FileResponse(path, media_type="text/csv; charset=utf-8", filename="data_sample.csv")
+
+
 os.makedirs(SITE_DIR, exist_ok=True)
 app.mount("/", StaticFiles(directory=SITE_DIR, html=True), name="site")
 

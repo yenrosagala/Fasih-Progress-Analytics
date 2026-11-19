@@ -530,7 +530,7 @@ _SHELL = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <a href="../data_sample.csv" download class="pngbtn" title="Unduh data sebagai CSV">&#10006; CSV</a>
+    <a href="../csv/data_sample.csv" download class="pngbtn" title="Unduh data sebagai CSV">&#10006; CSV</a>
 
     <section id="panel-data" class="panel active">
       <div class="tblwrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
