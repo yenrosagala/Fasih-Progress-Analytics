@@ -1,7 +1,9 @@
 # Runtime deps for the deployed dashboard (server.py).
 # The scraper/CLI (main.py) additionally needs the full set in requirements.txt
-# (matplotlib, openpyxl, pygame, InquirerPy) — those are NOT needed to serve.
+# (matplotlib, pygame, InquirerPy) — those are NOT needed to serve. openpyxl
+# IS needed here: /api/export/xlsx builds the real workbook server-side.
 httpx==0.28.1
+openpyxl==3.1.5
 fastapi==0.141.1
 uvicorn==0.52.1
 pandas==3.0.1

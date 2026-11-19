@@ -34,7 +34,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import build_site
@@ -612,6 +612,48 @@ async def data_sample_csv():
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="CSV belum tersedia")
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename="data_sample.csv")
+
+
+# ponytail: the browser posts the exact `filtered` rows + visible COLUMNS it is
+# already showing, so the workbook matches the screen (active survey, live
+# filters). No second filter implementation and no lossy CSV -> Excel re-import.
+@app.post("/api/export/xlsx")
+async def export_xlsx(request: Request):
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    body = await request.json()
+    columns = body.get("columns") or []
+    rows = body.get("rows") or []
+    name = str(body.get("name") or "fasih").strip() or "fasih"
+
+    def cell(v):
+        if v is None:
+            return ""
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v, ensure_ascii=False)
+        # openpyxl treats a leading "=" as a formula; keep data as data.
+        return "'" + v if isinstance(v, str) and v.startswith("=") else v
+
+    keys = [str(c.get("key") or "") for c in columns]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws.append([str(c.get("label") or c.get("key") or "") for c in columns])
+    for r in rows:
+        ws.append([cell((r or {}).get(k)) for k in keys])
+    ws.freeze_panes = "A2"
+    if ws.max_row > 1 and keys:
+        ws.auto_filter.ref = "A1:%s%d" % (ws.cell(row=1, column=len(keys)).column_letter, ws.max_row)
+
+    out = BytesIO()
+    wb.save(out)
+    fname = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in name).strip("-_")[:60] or "fasih"
+    return Response(
+        content=out.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="data-%s.xlsx"' % fname},
+    )
 
 
 os.makedirs(SITE_DIR, exist_ok=True)

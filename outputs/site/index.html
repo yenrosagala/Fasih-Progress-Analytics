@@ -310,7 +310,7 @@
       </div>
     </div>
 
-    <a href="../csv/data_sample.csv" download class="pngbtn" title="Unduh data sebagai CSV">&#10006; CSV</a>
+    <button id="xlsx" class="pngbtn" title="Unduh data sesuai filter saat ini sebagai Excel (.xlsx)">&#11015; Excel</button>
 
     <section id="panel-data" class="panel active">
       <div class="tblwrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
@@ -1320,6 +1320,35 @@ function grabPNG(blob, name){
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/* ponytail: posts the exact filtered rows + visible columns already on screen
+   (active survey only, live filters). The server writes a real .xlsx so no
+   CSV -> Excel re-import mangles separators, encoding or leading zeros. */
+const xlsxBtn = document.getElementById("xlsx");
+xlsxBtn.onclick = async () => {
+  const old = xlsxBtn.textContent;
+  xlsxBtn.disabled = true; xlsxBtn.textContent = "Menyiapkan…";
+  try {
+    const payload = {
+      name: META.name || "fasih",
+      columns: COLUMNS.map(c => ({ key: c.key, label: c.label || c.key })),
+      rows: filtered.map(r => {
+        const o = {};
+        for (const c of COLUMNS) o[c.key] = val(r, c.key);
+        return o;
+      })
+    };
+    const resp = await fetch("api/export/xlsx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error("Server menolak ekspor (" + resp.status + ")");
+    const nm = String(META.name || "fasih").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase().slice(0, 60) || "fasih";
+    grabPNG(await resp.blob(), "data-" + nm + ".xlsx");
+  } catch(e){ alert("Gagal membuat Excel: " + e.message); }
+  finally { xlsxBtn.disabled = false; xlsxBtn.textContent = old; }
+};
+
 const pngBtn = document.getElementById("png");
 pngBtn.onclick = async () => {
   const old = pngBtn.textContent;
@@ -1617,6 +1646,9 @@ cmModal.onclick = (e) => { if (e.target === cmModal) cmModal.style.display = "no
     } catch(e){ setSess(false); }
     initBackend();
   } else {
+    /* ponytail: no backend here to build a workbook - hide the export instead
+       of linking a stale all-survey CSV. */
+    xlsxBtn.style.display = "none";
     initStatic();
   }
 })();
