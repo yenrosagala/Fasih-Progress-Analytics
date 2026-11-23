@@ -52,20 +52,118 @@ KAB_NAME_OVERRIDES = {
     "9403": "JAYAPURA",
 }
 #
-# Only surveys whose headers we have confirmed belong here. Anything else shows
-# an honest "Data 1..10" rather than a label borrowed from another survey -
-# the old single shared map put names like "Desa" on columns holding a status.
+# Labels mainly fetched from FASIH's own custom-data endpoint:
+# /assignment-sync/api/mobile/template/custom-data/{templateId}
+# (field `columnName`; captured 2026-11-24). Key = case-insensitive survey-name
+# substring. Blank/misaligned keys are noted inline; anything still unknown
+# stays as honest "Data N" instead of borrowing another survey's label.
 data_column_labels_by_survey = {
-    "SITASI": {
-        "data1": "Wilayah",
-        "data2": "No. Urut",
-        "data3": "Jenis",
-        "data4": "Kategori Sampel",
-        "data5": "Nama Usaha",
-        "data6": "Nama Responden",
+    "[ PENDATAAN ] SITASI 2026": {
+        "data1": "ID SubSLS",
+        "data2": "NUS",
+        "data3": "Unit Sampel",
+        "data4": "Status Sampel",
+        "data5": "Kontak Sampel",
+        "data6": "Nama UTP/UPB/UTL",
+        "data7": "Alamat",
+        "data8": "Komoditas ST2023",
+        "data9": "Komoditas Prioritas",
+        "data10": "Hasil Pendataan",
+    },
+    "[ PENDATAAN ] SKP2026": {
+        "data1": "ID SubSLS",
+        "data2": "NUS",
+        "data3": "NKS",
+        "data4": "Status Sampel",
+        "data5": "Nama KRT",
+        "data6": "Alamat",
+        "data7": "Subsektor Utama ST2023",
+        "data8": "Komoditas ST2023",
+        "data9": "Hasil Pendataan",
+    },
+    "[PELAKSANAAN] SKGB-KERING 2026": {
+        "data1": "Segmen",
+        "data2": "Sub",
+        "data3": "Status",
+        "data4": "Panen",
+        "data5": "Lokasi",
+        "data6": "NKS",
+        "data7": "Hasil Pencacahan",
+    },
+    "[PELAKSANAAN] SKGB-GILING 2026": {
+        "data1": "Skala",
+        "data2": "Status",
+        "data3": "NKS",
+        "data4": "Nama",
+        "data5": "Alamat",
+        # ponytail: custom-data leaves these blank; assignment answers prove
+        # data6=r115 and data7=r104p. Upgrade = API ships stable key metadata.
+        "data6": "Hasil Pencacahan",
         "data7": "Desa",
-        "data8": "Komoditas",
-        "data9": "Komoditas Utama",
+    },
+    "VPVN VN-Horti (NRT) 2026": {
+        "data1": "Provinsi",
+        "data2": "Kabupaten/Kota",
+        "data3": "Nama Usaha Hortikultura",
+        "data4": "Alamat Usaha Hortikultura",
+        "data5": "KIN",
+        "data6": "Hasil Kunjungan",
+    },
+    "VPVN VP-Horti (Perusahaan) 2026": {
+        "data1": "Provinsi",
+        "data2": "Kabupaten",
+        "data3": "Nama Perusahaan",
+        "data4": "Alamat Perusahaan",
+    },
+    "VPEK 2026": {
+        "data1": "Jenis Sampel",
+        "data2": "Nama Perusahaan",
+        "data3": "KBLI",
+        "data4": "NUP",
+        "data5": "Alamat",
+        "data6": "Kecamatan",
+        "data7": "Kelurahan / Desa",
+        "data8": "Keadaan Perusahaan",
+        "data9": "Unit Penunjang",
+    },
+    "[PELAKSANAAN] VIP-HORTI.S": {
+        "data1": "NUS",
+        "data2": "Status Sampel",
+        "data3": "Nama Unit Usaha",
+        "data4": "Alamat",
+        "data5": "Komoditas Horti",
+        "data6": "Jenis Unit Usaha",
+    },
+    "[PENCACAHAN] LTB 2026": {
+        "data1": "Provinsi",
+        "data2": "Kabupaten",
+        "data3": "Nama Perusahaan",
+        "data4": "Alamat Perusahaan",
+    },
+    "[PENCACAHAN] LTP 2026": {
+        "data1": "Provinsi",
+        "data2": "Kabupaten",
+        "data3": "Nama Perusahaan",
+        "data4": "Alamat",
+    },
+    "PASSENGER EXIT SURVEY (PES) 2026": {
+        "data1": "Name",
+        "data2": "Nationality",
+    },
+}
+
+# One stale, unconfigured VIP period has a shifted layout; keep its labels
+# pinned instead of borrowing the active period's names.
+# ponytail: payload id is the only period key available; upgrade = drop this
+# map once the stale payload is refreshed or removed.
+data_column_labels_by_period = {
+    "e2ef8298-108c-4ecf-8940-ecb2951ca444": {
+        "data1": "Status Sampel",
+        "data2": "Nama Unit Usaha",
+        "data3": "Alamat",
+        "data4": "Komoditas Horti",
+        "data5": "Komoditas Terpilih",
+        "data6": "Jenis Unit Usaha",
     },
 }
 

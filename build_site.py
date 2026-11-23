@@ -14,7 +14,7 @@ import json
 import os
 import zlib
 
-from config import KAB_NAME_OVERRIDES, data_column_labels_by_survey
+from config import KAB_NAME_OVERRIDES, data_column_labels_by_period, data_column_labels_by_survey
 
 DATA_JSON = "outputs/data_sample.json"
 SURVEY_CFG = "inputs/survey_config.json"
@@ -63,8 +63,12 @@ _DEMO_CYCLE = (["final"] * 40 + ["approved"] * 20 + ["submitted"] * 15
                + ["rejected"] * 7 + ["draft"] * 8 + ["open"] * 10)
 
 
-def _labels_for(survey_name):
+def _labels_for(survey_name, period_id=""):
     """Labels for one survey's dataN columns, or {} when none is confirmed."""
+    # ponytail: a stale period can differ from the active layout; upgrade = fetch
+    # labels from FASIH at refresh time instead of keeping a pin table here.
+    if period_id in data_column_labels_by_period:
+        return data_column_labels_by_period[period_id]
     name = (survey_name or "").lower()
     for probe, labels in data_column_labels_by_survey.items():
         if probe.lower() in name:
@@ -72,12 +76,12 @@ def _labels_for(survey_name):
     return {}
 
 
-def _columns(rows, survey_name=""):
+def _columns(rows, survey_name="", period_id=""):
     """Keys from EVERY row of this survey, not just the first (FASIH can omit
     a dataN on early rows and add it later). ponytail: first-seen order keeps
     the payload stable; upgrade = a per-survey header map if the API ever
     ships real column names. """
-    labels = _labels_for(survey_name)
+    labels = _labels_for(survey_name, period_id)
     keys, seen_keys = [], set()
     for row in rows:
         for key in row:
@@ -102,7 +106,7 @@ def _payload(sid, name, stype, rows, generated, period, demo=False):
     return {
         "id": sid, "name": name, "type": stype, "demo": demo,
         "generated": generated, "period": period,
-        "columns": _columns(rows, name),
+        "columns": _columns(rows, name, sid),
         "statusMap": STATUS_MAP,
         "submitKeys": ["submitted", "approved", "final"],
         "finalKeys": ["final"],
@@ -173,8 +177,15 @@ def rebuild_manifest():
     for fn in files:
         if not fn.endswith(".json"):
             continue
-        with open(os.path.join(ddir, fn), encoding="utf-8") as f:
+        path = os.path.join(ddir, fn)
+        with open(path, encoding="utf-8") as f:
             p = json.load(f)
+        # Keep labels in sync with config.py without touching fresh rows/stamps.
+        # ponytail: relabel only; upgrade = store labels on the payload at scrape time.
+        cols = _columns(p.get("rows", []), p.get("name", ""), p.get("id", ""))
+        if cols != p.get("columns"):
+            p["columns"] = cols
+            _write(path, p)
         if (p.get("generated") or "") > generated:
             generated = p.get("generated") or ""
         items.append({"id": p.get("id"), "name": p.get("name", ""), "type": p.get("type", ""),
