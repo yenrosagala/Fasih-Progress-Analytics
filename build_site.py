@@ -72,17 +72,27 @@ def _labels_for(survey_name):
     return {}
 
 
-def _columns(sample_row, survey_name=""):
+def _columns(rows, survey_name=""):
+    """Keys from EVERY row of this survey, not just the first (FASIH can omit
+    a dataN on early rows and add it later). ponytail: first-seen order keeps
+    the payload stable; upgrade = a per-survey header map if the API ever
+    ships real column names. """
     labels = _labels_for(survey_name)
+    keys, seen_keys = [], set()
+    for row in rows:
+        for key in row:
+            if key not in seen_keys:
+                seen_keys.add(key)
+                keys.append(key)
     cols, seen = [], set()
     for key in ORDER:
-        if key in sample_row:
+        if key in seen_keys:
             label = labels.get(key) or LABELS.get(key)
             if not label and key.startswith("data") and key[4:].isdigit():
                 label = f"Data {key[4:]}"
             cols.append({"key": key, "label": label or key})
             seen.add(key)
-    for key in sample_row:
+    for key in keys:
         if key not in seen:
             cols.append({"key": key, "label": key})
     return cols
@@ -92,7 +102,7 @@ def _payload(sid, name, stype, rows, generated, period, demo=False):
     return {
         "id": sid, "name": name, "type": stype, "demo": demo,
         "generated": generated, "period": period,
-        "columns": _columns(rows[0], name) if rows else [],
+        "columns": _columns(rows, name),
         "statusMap": STATUS_MAP,
         "submitKeys": ["submitted", "approved", "final"],
         "finalKeys": ["final"],
@@ -637,6 +647,25 @@ function val(r,k){ const v = r[k]; if (v === null || v === undefined) return "";
   if (v === "None" || v === "undefined" || v === "null") return "";
   return v; }
 
+/* Every survey payload ships the same 35-key FASIH schema, but each survey
+   fills only part of it. Show the columns this survey actually has; the CORE
+   keys stay because the Dashboard/Progress tabs group on them even if a period
+   left them blank. ponytail: upgrade = hide CORE keys too once those tabs
+   degrade gracefully without prov/kab/status. */
+const CORE_COLUMNS = new Set(["name","periode","codeIdentity","status","prov","kab","prov_code","kab_code"]);
+function visibleColumns(cols, rows){
+  /* Union of the declared schema and whatever keys the rows actually carry,
+     so a stale payload's first-row-only column list can't hide later dataN. */
+  const labels = {};
+  cols.forEach(c => { if (c && c.key) labels[c.key] = c.label || c.key; });
+  const keys = [], seen = new Set();
+  const add = k => { if (k && !seen.has(k)){ seen.add(k); keys.push(k); } };
+  cols.forEach(c => add(c && c.key));
+  for (const r of rows) for (const k in r) add(k);
+  return keys.filter(k => CORE_COLUMNS.has(k) || rows.some(r => val(r,k) !== ""))
+             .map(k => ({ key:k, label:labels[k] || k }));
+}
+
 function canonStatus(v){
   const s = String(v || "").trim().toUpperCase();
   if (!s) return "other";
@@ -782,7 +811,11 @@ function refreshSelects(){
   document.querySelectorAll(".filters select").forEach(sel => {
     const k = sel.dataset.key;
     const opts = distinctOptions(k);
-    const cur = state.filters[k] || [];
+    /* A sibling filter can make this value disappear from the options. Drop it
+       from state too, or the table keeps filtering on an invisible selection. */
+    let cur = state.filters[k] || [];
+    const valid = cur.filter(v => opts.includes(v));
+    if (valid.length !== cur.length) state.filters[k] = cur = valid;
     sel.innerHTML = '<option value="">Semua ' + esc(LABEL[k] || k) + "</option>" +
       opts.map(o => '<option value="' + esc(o) + '"' + (cur.includes(o) ? " selected" : "") + ">" + esc(o) + "</option>").join("");
   });
@@ -1230,6 +1263,7 @@ function renderTable(){
 }
 
 function apply(){
+  refreshSelects();  // prune values a sibling filter removed, before filtering
   if (!DATA.length){ filtered = []; }
   else filtered = DATA.filter(r => matches(r, null));
   if (state.sort.key){
@@ -1241,7 +1275,6 @@ function apply(){
       return String(x).localeCompare(String(y))*d;
     });
   }
-  refreshSelects();
   renderCards();
   renderDashboard();
   renderProgress();
@@ -1275,8 +1308,8 @@ function setStep(n){
 function applySurvey(s){
   META = { id:s.id||"", generated:s.generated||"", name:s.name||"", type:s.type||"", demo:!!s.demo,
            startDate:(s.period||{}).start||"", endDate:(s.period||{}).end||"" };
-  COLUMNS = s.columns || [];
   DATA = s.rows || [];
+  COLUMNS = visibleColumns(s.columns || [], DATA);
   STATUS_DEF = (s.statusMap && s.statusMap.length) ? s.statusMap : [];
   STATUS = {}; STATUS_DEF.forEach(d => STATUS[d.key] = d);
   STATUS_ORDER = STATUS_DEF.map(d => d.key);

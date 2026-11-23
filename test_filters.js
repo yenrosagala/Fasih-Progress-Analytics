@@ -41,6 +41,22 @@ if (matches({ data9: "1. Berhasil diwawancarai" }, null)) throw new Error("unsel
 state.filters = { data9: [] };
 if (!matches({ data9: "1. Berhasil diwawancarai" }, null)) throw new Error("empty filter must pass all");
 if (val({ data10: "None" }, "data10") !== "" || val({ data10: "undefined" }, "data10") !== "" || val({ data10: "1. Berhasil diwawancarai" }, "data10") !== "1. Berhasil diwawancarai") throw new Error("val() must blank serializer junk and keep real values");
+
+/* Per-survey schema: a survey's table shows only columns it actually fills,
+   while the Dashboard/Progress CORE keys stay. Filter options must follow the
+   active survey's rows, not a previous survey's values. */
+const vc = visibleColumns(
+  [{ key: "name" }, { key: "kab" }, { key: "data1" }, { key: "data2" }, { key: "kab_code" }],
+  [{ name: "S", kab: "K", data1: "x" }]);
+if (vc.map(c => c.key).join(",") !== "name,kab,data1,kab_code") throw new Error("visibleColumns must drop this survey's empty columns but keep CORE keys");
+COLUMNS = [{ key: "name" }, { key: "mode" }];
+FILTER_KEYS = ["name", "mode"]; MULTI_KEYS = [];
+state = { q: "", page: 0, pageSize: 100, sort: { key: null, dir: 1 }, filters: { name: [], mode: [] }, graphKey: null };
+DATA = [{ name: "SITASI", mode: "CAPI" }, { name: "SITASI", mode: "CAPI" }];
+if (distinctOptions("mode").join(",") !== "CAPI") throw new Error("filter values must come from the active survey");
+DATA = [{ name: "SKP", mode: "PAPI" }, { name: "SKP", mode: "Kertas" }];
+const dynModes = distinctOptions("mode").join(",");
+if (dynModes !== "Kertas,PAPI") throw new Error("filter values must change when survey changes: " + dynModes);
 console.log("test_filters OK");
 
 /* --- Progress per Kabupaten: target = sampel utama, done = hasil diwawancarai & status >= submit --- */
