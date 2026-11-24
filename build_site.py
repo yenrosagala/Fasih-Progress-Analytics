@@ -63,25 +63,57 @@ _DEMO_CYCLE = (["final"] * 40 + ["approved"] * 20 + ["submitted"] * 15
                + ["rejected"] * 7 + ["draft"] * 8 + ["open"] * 10)
 
 
-def _labels_for(survey_name, period_id=""):
-    """Labels for one survey's dataN columns, or {} when none is confirmed."""
-    # ponytail: a stale period can differ from the active layout; upgrade = fetch
-    # labels from FASIH at refresh time instead of keeping a pin table here.
-    if period_id in data_column_labels_by_period:
-        return data_column_labels_by_period[period_id]
-    name = (survey_name or "").lower()
-    for probe, labels in data_column_labels_by_survey.items():
-        if probe.lower() in name:
-            return labels
-    return {}
+def _label_map(labels):
+    """Keep only non-empty dataN titles from any source."""
+    out = {}
+    if not isinstance(labels, dict):
+        return out
+    for key, val in labels.items():
+        if (isinstance(key, str) and key.startswith("data") and key[4:].isdigit()
+                and isinstance(val, str) and val.strip()):
+            out[key] = val.strip()
+    return out
 
 
-def _columns(rows, survey_name="", period_id=""):
+def _labels_for(survey_name, period_id="", fetched=None):
+    """FASIH titles first, then curated fixes, then the stale-period pin."""
+    labels = _label_map(fetched)
+    name = (survey_name or "").strip().lower()
+    # ponytail: exact config keys are deliberate corrections (blank/misaligned
+    # custom-data filled from assignments); fuzzy matches only fill gaps so a
+    # new survey sharing words with an old one keeps its own fetched titles.
+    # Upgrade = drop config maps once custom-data is complete and trustworthy.
+    for probe, mapped in data_column_labels_by_survey.items():
+        if probe.strip().lower() == name:
+            labels.update(_label_map(mapped))
+            break
+    for probe, mapped in data_column_labels_by_survey.items():
+        if probe.strip().lower() in name:
+            for key, val in _label_map(mapped).items():
+                labels.setdefault(key, val)
+            break
+    labels.update(_label_map(data_column_labels_by_period.get(period_id)))
+    return labels
+
+
+def _stored_labels(sid):
+    """Last fetched dataN titles for this payload; {} when never fetched."""
+    if not sid:
+        return {}
+    try:
+        with open(os.path.join(SITE_DIR, "data", f"{sid}.json"), encoding="utf-8") as f:
+            old = json.load(f)
+        return _label_map(old.get("columnLabels")) if isinstance(old, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _columns(rows, survey_name="", period_id="", fetched=None):
     """Keys from EVERY row of this survey, not just the first (FASIH can omit
     a dataN on early rows and add it later). ponytail: first-seen order keeps
     the payload stable; upgrade = a per-survey header map if the API ever
     ships real column names. """
-    labels = _labels_for(survey_name, period_id)
+    labels = _labels_for(survey_name, period_id, fetched)
     keys, seen_keys = [], set()
     for row in rows:
         for key in row:
@@ -102,11 +134,12 @@ def _columns(rows, survey_name="", period_id=""):
     return cols
 
 
-def _payload(sid, name, stype, rows, generated, period, demo=False):
+def _payload(sid, name, stype, rows, generated, period, demo=False, column_labels=None):
     return {
         "id": sid, "name": name, "type": stype, "demo": demo,
         "generated": generated, "period": period,
-        "columns": _columns(rows, name, sid),
+        "columnLabels": _label_map(column_labels),
+        "columns": _columns(rows, name, sid, column_labels),
         "statusMap": STATUS_MAP,
         "submitKeys": ["submitted", "approved", "final"],
         "finalKeys": ["final"],
@@ -148,18 +181,22 @@ def _load_cfg():
         return json.load(f).get("selected_surveys", [])
 
 
-def write_payload(sid, name, stype, rows, generated, period, demo=False):
+def write_payload(sid, name, stype, rows, generated, period, demo=False, column_labels=None):
     """Write one survey payload to data/<sid>.json; returns it."""
     # Every payload writer (server refresh, rebuild, streamlit) passes through
     # here, so kab label overrides hold even for writers that forget them.
     # ponytail: a config.py edit still needs one process restart (Python binds
     # imports at start); upgrade = re-read the table per call if it must change
     # while the server runs.
+    # None = no fresh answer (probe failed or writer didn't look): keep the last
+    # fetched titles. {} = FASIH had no metadata: clear back to config/Data N.
+    if column_labels is None:
+        column_labels = _stored_labels(sid)
     for r in rows:
         k = str(r.get("kab_code") or "")
         if k in KAB_NAME_OVERRIDES:
             r["kab"] = KAB_NAME_OVERRIDES[k]
-    payload = _payload(sid, name, stype, rows, generated, period, demo)
+    payload = _payload(sid, name, stype, rows, generated, period, demo, column_labels)
     _write(os.path.join(SITE_DIR, "data", f"{sid}.json"), payload)
     return payload
 
@@ -180,9 +217,11 @@ def rebuild_manifest():
         path = os.path.join(ddir, fn)
         with open(path, encoding="utf-8") as f:
             p = json.load(f)
-        # Keep labels in sync with config.py without touching fresh rows/stamps.
-        # ponytail: relabel only; upgrade = store labels on the payload at scrape time.
-        cols = _columns(p.get("rows", []), p.get("name", ""), p.get("id", ""))
+        # Keep labels in sync with fetched titles + config.py without touching
+        # fresh rows/stamps. ponytail: relabel only; upgrade = move this whole
+        # step into write_payload once every writer supplies labels.
+        cols = _columns(p.get("rows", []), p.get("name", ""), p.get("id", ""),
+                        p.get("columnLabels"))
         if cols != p.get("columns"):
             p["columns"] = cols
             _write(path, p)

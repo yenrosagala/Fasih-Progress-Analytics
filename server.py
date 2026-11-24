@@ -43,6 +43,7 @@ import ai
 from api_client import get_requests, post_requests
 from config import (
     BASE_HEADERS,
+    custom_data_url,
     payload_survey,
     survey_datatable_url,
     survey_periods_url,
@@ -188,6 +189,38 @@ async def lifespan(app):
 app = FastAPI(title="FASIH Analytics", lifespan=lifespan)
 
 
+async def _fetch_column_labels(survey_id, headers, cookies, meta=None):
+    """FASIH dataN titles. None = probe failed, {} = no metadata available.
+
+    ponytail: labels are cosmetic; a failed/partial probe must never fail a
+    scrape. Upgrade = retry/alert when FASIH starts denying custom-data.
+    """
+    try:
+        if meta is None:
+            if not survey_id:
+                return {}
+            meta = (await get_requests(surveys_base_url + survey_id, headers, cookies, timeout=30, max_retries=1)).json().get("data") or {}
+        templates = meta.get("surveyTemplates") or []
+        tid = next((t.get("templateId") for t in templates
+                    if isinstance(t, dict) and t.get("templateId")), "")
+        if not tid:
+            return {}
+        body = (await get_requests(custom_data_url + tid, headers, cookies, timeout=60, max_retries=1)).json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, dict):
+            return {}
+        labels = {}
+        for key, item in data.items():
+            if not (isinstance(key, str) and key.startswith("data") and key[4:].isdigit()):
+                continue
+            name = item.get("columnName") if isinstance(item, dict) else None
+            if isinstance(name, str) and name.strip():
+                labels[key] = name.strip()
+        return labels
+    except Exception:
+        return None
+
+
 async def _refresh_survey(sid):
     _stage(sid, 0)
     cfg = build_site._load_cfg()
@@ -223,7 +256,11 @@ async def _refresh_survey(sid):
     _stage(sid, 4, f"{len(rows)} baris")
     generated = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     period = {"start": entry.get("surveyPeriodStartDate", ""), "end": entry.get("surveyPeriodEndDate", "")}
-    build_site.write_payload(sid, name, entry.get("type", ""), rows, generated, period)
+    raw = row.iloc[0].get("id")
+    survey_id = raw if isinstance(raw, str) and raw else ""
+    column_labels = await _fetch_column_labels(survey_id, headers, cookies)
+    build_site.write_payload(sid, name, entry.get("type", ""), rows, generated, period,
+                             column_labels=column_labels)
     _stage(sid, 5)
     build_site.rebuild_manifest()
     return len(rows), generated
@@ -313,7 +350,9 @@ async def _refresh_period(sid, pid, key):
 
     _stage(key, 2, f"{len(rows)} baris")
     generated = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-    build_site.write_payload(pid, name, "pencacahan", rows, generated, {"start": pstart, "end": pend})
+    column_labels = await _fetch_column_labels(sid, headers, cookies, meta=meta)
+    build_site.write_payload(pid, name, "pencacahan", rows, generated, {"start": pstart, "end": pend},
+                             column_labels=column_labels)
     build_site.rebuild_manifest()
     _stage(key, len(PERIOD_STEPS), f"{len(rows)} baris")
     return len(rows), generated

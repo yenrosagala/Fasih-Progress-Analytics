@@ -30,6 +30,8 @@ survey_datatable_url = f"{API_BASE_URL}/survey/api/v1/surveys/datatable?surveyTy
 surveys_base_url = f"{API_BASE_URL}/survey/api/v1/surveys/"
 survey_periods_url = f"{API_BASE_URL}/survey/api/v1/survey-periods/my?surveyId="
 myinfo_url = f"{API_BASE_URL}/survey/api/v1/users/myinfo?surveyPeriodId="
+# Real dataN titles live here, not on the template components.
+custom_data_url = f"{API_BASE_URL}/assignment-sync/api/mobile/template/custom-data/"
 region_level1_url = f"{API_BASE_URL}/region/api/v1/region/level1?groupId="
 region_level2_url = f"{API_BASE_URL}/region/api/v1/region/level2?groupId="
 
