@@ -2,8 +2,8 @@
    progress-bar logic. Run: node test_filters.js
    Loads the real inline script from the built site and exercises computeFilterKeys /
    matches / renderProgress's utama+done aggregation, so it fails if the enumerated-
-   option detection, the multi-value predicate, or the progress math regresses.
-   No dependencies: a Proxy stands in for the DOM. */
+   option detection, the multi-value predicate, the progress math, or kab_code
+   ordering regresses. No dependencies: a Proxy stands in for the DOM. */
 const fs = require("fs");
 const vm = require("vm");
 
@@ -138,5 +138,38 @@ const pth = els.ptable.innerHTML;
 const t1a = pth.indexOf("<th>Target</th>"), t1b = pth.indexOf("target: jumlah sampel");
 const jtab = ((pth.slice(t1a, t1b).match(/>JAYAPURA</g)) || []).length;
 if (jtab !== 2) throw new Error("PTable must show 2 rows labeled by name, got " + jtab);
+
+/* Ordering: code order wins over name order (ZZZ=9403 must precede AAA=9471)
+   in filter options, progress bars, enum bars, and both progress tables. */
+COLUMNS = [
+  { key: "prov", label: "Prov" }, { key: "kab", label: "Kab" },
+  { key: "data4", label: "Kategori Sampel" }, { key: "data10", label: "Hasil Pendataan" },
+];
+FILTER_KEYS = ["prov", "kab", "data4", "data10"];
+MULTI_KEYS = ["data4", "data10"];
+DATA = [
+  { prov: "P", kab: "AAA", kab_code: "9471", data4: "1. Utama", data10: "1. Berhasil diwawancarai" },
+  { prov: "P", kab: "ZZZ", kab_code: "9403", data4: "1. Utama", data10: "1. Berhasil diwawancarai" },
+];
+state = { q: "", page: 0, pageSize: 100, sort: { key: null, dir: 1 }, filters: {}, graphKey: "data10" };
+filtered = DATA;
+const kabOpts = distinctOptions("kab").join(",");
+if (kabOpts !== "ZZZ,AAA") throw new Error("kab filter must sort by kab_code: " + kabOpts);
+
+renderProgress();
+const bars = els.progressgrid.innerHTML;
+const barA = bars.indexOf('title="AAA: '), barZ = bars.indexOf('title="ZZZ: ');
+if (barA < 0 || barZ < 0 || barZ > barA) throw new Error("progress bars must follow kab_code order:\n" + bars.slice(0, 500));
+const enumA = bars.indexOf('title="AAA: n='), enumZ = bars.indexOf('title="ZZZ: n=');
+if (enumA < 0 || enumZ < 0 || enumZ > enumA) throw new Error("enum bars must follow kab_code order:\n" + bars.slice(0, 500));
+if (!bars.includes("Urut berdasarkan kode kabupaten/kota")) throw new Error("progress caption must state kab_code order");
+
+renderPTable();
+const pt2 = els.ptable.innerHTML;
+const rowPos = name => [...pt2.matchAll(new RegExp(">" + name + "</td>", "g"))].map(m => m.index);
+const posA = rowPos("AAA"), posZ = rowPos("ZZZ");
+if (posA.length !== 2 || posZ.length !== 2 || posZ[0] > posA[0] || posZ[1] > posA[1])
+  throw new Error("both progress tables must follow kab_code order:\n" + JSON.stringify({ posA, posZ }));
+if (!pt2.includes("urut kode kabupaten/kota")) throw new Error("table caption must state kab_code order");
 console.log("kab_progress OK");
 process.exit(0);

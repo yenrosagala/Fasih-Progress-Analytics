@@ -453,6 +453,11 @@ function aggregate(rows){
    ponytail: n = first row's name for the group; upgrade = canonical code->label
    table at render if one group ever carries conflicting names. */
 const gkey = (r, key) => String(val(r, key + "_code") || val(r, key) || "(kosong)");
+/* Region lists follow FASIH's own code order (kab_code 9403 before 9471), not
+   alphabetical name. ponytail: numeric localeCompare tolerates leading zeros;
+   upgrade = a canonical code->label table if codes ever stop sorting by region. */
+const byCode = (a, b) => String(a.g || "").localeCompare(String(b.g || ""), undefined, { numeric: true })
+  || String(a.n || "").localeCompare(String(b.n || ""));
 function aggGroups(rows, groupKey){
   const m = new Map();
   for (const r of rows){
@@ -534,9 +539,20 @@ function matches(r, skip){
 let filtered = [];
 
 function distinctOptions(key){
-  const set = new Set();
-  for (const r of DATA) if (matches(r, key)) { const v = val(r,key); if (v !== "") set.add(String(v)); }
-  return [...set].sort();
+  const set = new Set(), codes = new Map();
+  for (const r of DATA) if (matches(r, key)) {
+    const v = val(r,key);
+    if (v !== ""){
+      const s = String(v); set.add(s);
+      if (key === "kab" && !codes.has(s)) codes.set(s, String(val(r,"kab_code") || ""));
+    }
+  }
+  const opts = [...set];
+  /* Kabupaten filter follows kab_code too; names like JAYAPURA/KOTA JAYAPURA
+     sort wrong alphabetically against their codes 9403/9471. */
+  return key === "kab"
+    ? opts.sort((a,b) => String(codes.get(a)||"").localeCompare(String(codes.get(b)||""), undefined, { numeric:true }) || a.localeCompare(b))
+    : opts.sort();
 }
 
 function multiSummary(k){ const n = (state.filters[k] || []).length; return n ? (LABEL[k] || k) + " (" + n + ")" : "Semua " + (LABEL[k] || k); }
@@ -901,9 +917,9 @@ function renderProgress(){
      "1. Utama"; hasil = utama + cadangan dengan hasil pendataan
      "1. Berhasil diwawancarai" (status assignment tidak memengaruhi). */
   const P = progOf(filtered);
-  const pKabs = [...P.map("kab").values()].sort((a,b) => P.pct(b) - P.pct(a) || b.target - a.target || a.n.localeCompare(b.n));
+  const pKabs = [...P.map("kab").values()].sort(byCode);
   const pProvs = [...P.map("prov").values()].sort((a,b) => P.pct(b) - P.pct(a) || b.target - a.target || a.n.localeCompare(b.n));
-  const ksub = "Urut dari % progress tertinggi \u2022 target: " +
+  const ksub = "Urut berdasarkan kode kabupaten/kota \u2022 target: " +
     (P.useU ? "sampel utama" : "semua sampel") + " \u2022 hasil: " +
     (P.hk ? "utama+cadangan, berhasil diwawancarai"
           : (P.useU ? "utama+cadangan" : "semua sampel"));
@@ -933,7 +949,7 @@ function renderProgress(){
   const enumKey = (state.graphKey && COLUMNS.some(c => c.key === state.graphKey)) ? state.graphKey : statusDataKey();
   const eOpts = enumKey ? groupCount(r => val(r, enumKey)).map(i => i.k) : [];
   const eKabs = (enumKey && hasKab)
-    ? aggEnum(filtered, enumKey, "kab").sort((a,b) => b.total - a.total || a.n.localeCompare(b.n)) : [];
+    ? aggEnum(filtered, enumKey, "kab").sort(byCode) : [];
   /* With a Hasil Pendataan column, it sits side by side with Progress-per-Kabupaten
      as an equal pair (span6 + span6 = 12). Without one the Kabupaten section takes
      the full span9 and the sidecol keeps assignment/priority (checkpoint-progress-tab). */
@@ -959,7 +975,7 @@ function renderProgress(){
 
 /* Publishable table view of Progress: two tables - per-status progress and the
    detected enum breakdown (e.g. Hasil Pendataan) - one row per kabupaten plus
-   its provinsi, sorted by provinsi/kabupaten name. ponytail: no click-sort/
+   its provinsi (display only), sorted by kabupaten code. ponytail: no click-sort/
    paging/frozen columns; upgrade = reuse Data-tab sort/pager once columns
    outgrow the scroll viewport. */
 function renderPTable(){
@@ -971,9 +987,8 @@ function renderPTable(){
   if (withProv) filtered.forEach(r => {
     const k = gkey(r, gk); if (k && !provOf.has(k)) provOf.set(k, val(r, "prov"));
   });
-  const rows = aggGroups(filtered, gk).sort((a,b) =>
-    (withProv ? String(provOf.get(a.g) || "").localeCompare(String(provOf.get(b.g) || "")) : 0) ||
-    String(a.n).localeCompare(String(b.n)));
+  const rows = aggGroups(filtered, gk).sort(gk === "kab" ? byCode
+    : (a,b) => String(a.n).localeCompare(String(b.n)));
   const enumKey = (state.graphKey && COLUMNS.some(c => c.key === state.graphKey)) ? state.graphKey : statusDataKey();
   const P = progOf(filtered);
   /* Third table (div[3], Hasil Pendataan): Utama + Cadangan dengan hasil
@@ -989,10 +1004,11 @@ function renderPTable(){
     '<th class="nm">' + esc(gc ? gc.label : gk) + "</th>";
   const td0 = o => (withProv ? '<td class="nm">' + esc(provOf.get(o.g) || "") + "</td>" : "") +
     '<td class="nm" style="color:' + pctColor(P.pct(gp(o))) + '">' + esc(o.n) + "</td>";
+  const orderBy = gk === "kab" ? "kode kabupaten/kota" : gc ? gc.label : gk;
   const cap = '<div class="pmeta"><div class="t">' + esc(META.name || "Tabel Progress") +
     '</div><div class="d">Data per ' + esc(fmtStamp(META.generated)) + "  |  " +
     filtered.length.toLocaleString("id-ID") + " sampel  |  urut " +
-    (withProv ? "provinsi, kabupaten" : gc ? gc.label : gk) + "  |  baris: " +
+    esc(orderBy) + "  |  baris: " +
     esc(gc ? gc.label : gk) + "</div></div>";
   if (!rows.length){ el.innerHTML = '<div class="empty">tidak ada data</div>'; return; }
   const t1 = '<div class="tblwrap"><table><thead><tr>' + th0 +
