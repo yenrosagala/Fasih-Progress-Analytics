@@ -59,8 +59,8 @@ const dynModes = distinctOptions("mode").join(",");
 if (dynModes !== "Kertas,PAPI") throw new Error("filter values must change when survey changes: " + dynModes);
 console.log("test_filters OK");
 
-/* --- Progress per Kabupaten: target = sampel utama, hasil = utama+cadangan,
-   status bukan open/draft/reject, dan hasil pendataan "1. Berhasil diwawancarai" --- */
+/* --- Progress per Kabupaten: target = sampel utama, hasil = utama+cadangan
+   dengan hasil pendataan "1. Berhasil diwawancarai" (status diabaikan) --- */
 const els = {};
 globalThis.document = { getElementById: id => els[id] || (els[id] = { innerHTML: "", style: {}, onchange: null }) };
 STATUS_DEF = [
@@ -93,9 +93,9 @@ DATA = [
 filtered = DATA; state = { q: "", page: 0, pageSize: 100, sort: { key: null, dir: 1 }, filters: {}, graphKey: null };
 renderProgress();
 let pg = els.progressgrid.innerHTML;
-if (!pg.includes('title="Kab X: 2/2"') || !pg.includes("2 hasil dari target 4 sampel utama")) throw new Error("utama-target/cadangan-hasil logic wrong:\n" + String(pg).slice(0, 400));
-if (!pg.includes('title="Kab Y: 0/2"')) throw new Error("Kab Y should be 0/2 (open/rejected/empty hasil are not hasil)");
-if (!pg.includes("2/4")) throw new Error("prov row should be done/target progress (2/4):\n" + String(pg).slice(0, 400));
+if (!pg.includes('title="Kab X: 3/2"') || !pg.includes("4 hasil dari target 4 sampel utama")) throw new Error("utama-target/cadangan-hasil logic wrong:\n" + String(pg).slice(0, 400));
+if (!pg.includes('title="Kab Y: 1/2"')) throw new Error("Kab Y should be 1/2 (empty hasil is not hasil; open/rejected statuses still count)");
+if (!pg.includes("4/4")) throw new Error("prov row should be done/target progress (4/4):\n" + String(pg).slice(0, 400));
 if (!pg.includes("<span>progress</span>")) throw new Error("donut hole should show progress, not submit+");
 if (pg.includes("Komposisi Status")) throw new Error("status-composition donut title should be gone");
 /* Tabel tab div[3]: enum table counts only hasil-eligible rows */
@@ -109,7 +109,7 @@ if (ix < 0) throw new Error("enum table target note missing");
 const en = pt.slice(ix);
 if (!en.includes("<th>Target</th>")) throw new Error("div[3] should show Target column, not Total");
 if (en.includes("(kosong)")) throw new Error("empty hasil must not appear as hasil");
-if (en.includes("3. Tidak berhasil") || en.includes("4. Lain-lain")) throw new Error("rejected/open rows leaked into hasil table");
+if (en.includes("3. Tidak berhasil") || en.includes("4. Lain-lain")) throw new Error("non-hasil values leaked into hasil table");
 if (!en.includes("<td>2</td>")) throw new Error("Kab X target should be 2 utama rows, got:\n" + en.slice(0, 300));
 if (!en.includes("<td>3</td>")) throw new Error("Kab Y target should be 3 utama rows, got:\n" + en.slice(0, 300));
 /* div[2] Progress table: Target = utama, Progress = done/target */
@@ -117,12 +117,12 @@ const t1ix = pt.indexOf("<th>Target</th>");
 if (t1ix < 0 || t1ix > ix) throw new Error("div[2] should show Target column before the div[3] note");
 const t1 = pt.slice(t1ix, ix);
 if (!t1.includes("<th>Progress</th>")) throw new Error("div[2] should show Progress column, not %Submit+");
-if (!t1.includes("<td>100.0%</td>")) throw new Error("Kab X progress should be 100.0% (2/2):\n" + t1.slice(0, 400));
-/* Degraded: no Kategori Sampel column -> target = all rows (X = 2/3) */
+if (!t1.includes("<td>150.0%</td>")) throw new Error("Kab X progress should be 150.0% (3/2, cadangan adds to hasil):\n" + t1.slice(0, 400));
+/* Degraded: no Kategori Sampel column -> target = all rows (X = 3/3) */
 COLUMNS = COLUMNS.filter(c => c.key !== "data4");
 renderProgress();
 pg = els.progressgrid.innerHTML;
-if (!pg.includes("2/3")) throw new Error("degraded target should count all rows:\n" + String(pg).slice(0, 400));
+if (!pg.includes("3/3")) throw new Error("degraded target should count all rows:\n" + String(pg).slice(0, 400));
 /* One name, two kab_code (JAYAPURA = 9403 + 9471 in FASIH): must stay two
    rows keyed by kab_code, each labeled with the name from the data. */
 DATA.push({ kab: "JAYAPURA", kab_code: "9403", status: "SUBMITTED BY Pencacah", data4: "1. Utama", data10: "1. Berhasil diwawancarai" });
