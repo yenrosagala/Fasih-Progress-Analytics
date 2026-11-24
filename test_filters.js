@@ -59,7 +59,8 @@ const dynModes = distinctOptions("mode").join(",");
 if (dynModes !== "Kertas,PAPI") throw new Error("filter values must change when survey changes: " + dynModes);
 console.log("test_filters OK");
 
-/* --- Progress per Kabupaten: target = sampel utama, done = hasil diwawancarai & status >= submit --- */
+/* --- Progress per Kabupaten: target = sampel utama, hasil = utama+cadangan,
+   status bukan open/draft/reject, dan hasil pendataan "1. Berhasil diwawancarai" --- */
 const els = {};
 globalThis.document = { getElementById: id => els[id] || (els[id] = { innerHTML: "", style: {}, onchange: null }) };
 STATUS_DEF = [
@@ -92,12 +93,12 @@ DATA = [
 filtered = DATA; state = { q: "", page: 0, pageSize: 100, sort: { key: null, dir: 1 }, filters: {}, graphKey: null };
 renderProgress();
 let pg = els.progressgrid.innerHTML;
-if (!pg.includes("Kab X") || !pg.includes("1/2")) throw new Error("utama-target/done logic wrong:\n" + String(pg).slice(0, 400));
-if (!pg.includes("0/2")) throw new Error("Kab Y should be 0/2 (status-only and rejected rows are not done)");
-if (!pg.includes("1/4")) throw new Error("prov row should be done/target progress (1/4):\n" + String(pg).slice(0, 400));
+if (!pg.includes('title="Kab X: 2/2"') || !pg.includes("2 hasil dari target 4 sampel utama")) throw new Error("utama-target/cadangan-hasil logic wrong:\n" + String(pg).slice(0, 400));
+if (!pg.includes('title="Kab Y: 0/2"')) throw new Error("Kab Y should be 0/2 (open/rejected/empty hasil are not hasil)");
+if (!pg.includes("2/4")) throw new Error("prov row should be done/target progress (2/4):\n" + String(pg).slice(0, 400));
 if (!pg.includes("<span>progress</span>")) throw new Error("donut hole should show progress, not submit+");
 if (pg.includes("Komposisi Status")) throw new Error("status-composition donut title should be gone");
-/* Tabel tab div[3]: enum table counts only status submitted+ rows */
+/* Tabel tab div[3]: enum table counts only hasil-eligible rows */
 DATA[4].data10 = "3. Tidak berhasil";
 DATA.push({ kab: "Kab Y", status: "OPEN", data4: "1. Utama", data10: "4. Lain-lain" });
 filtered = DATA;
@@ -107,7 +108,8 @@ const ix = pt.indexOf("target: jumlah sampel");
 if (ix < 0) throw new Error("enum table target note missing");
 const en = pt.slice(ix);
 if (!en.includes("<th>Target</th>")) throw new Error("div[3] should show Target column, not Total");
-if (!en.includes("(kosong)")) throw new Error("approved row with empty hasil should appear as (kosong)");
+if (en.includes("(kosong)")) throw new Error("empty hasil must not appear as hasil");
+if (en.includes("3. Tidak berhasil") || en.includes("4. Lain-lain")) throw new Error("rejected/open rows leaked into hasil table");
 if (!en.includes("<td>2</td>")) throw new Error("Kab X target should be 2 utama rows, got:\n" + en.slice(0, 300));
 if (!en.includes("<td>3</td>")) throw new Error("Kab Y target should be 3 utama rows, got:\n" + en.slice(0, 300));
 /* div[2] Progress table: Target = utama, Progress = done/target */
@@ -115,7 +117,7 @@ const t1ix = pt.indexOf("<th>Target</th>");
 if (t1ix < 0 || t1ix > ix) throw new Error("div[2] should show Target column before the div[3] note");
 const t1 = pt.slice(t1ix, ix);
 if (!t1.includes("<th>Progress</th>")) throw new Error("div[2] should show Progress column, not %Submit+");
-if (!t1.includes("<td>50.0%</td>")) throw new Error("Kab X progress should be 50.0% (1/2):\n" + t1.slice(0, 400));
+if (!t1.includes("<td>100.0%</td>")) throw new Error("Kab X progress should be 100.0% (2/2):\n" + t1.slice(0, 400));
 /* Degraded: no Kategori Sampel column -> target = all rows (X = 2/3) */
 COLUMNS = COLUMNS.filter(c => c.key !== "data4");
 renderProgress();

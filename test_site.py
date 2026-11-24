@@ -5,6 +5,7 @@ data/ files disagree, or status bucketing stops matching the raw aliases.
 """
 import json
 import os
+import re
 
 import build_site
 
@@ -95,13 +96,39 @@ def main():
         assert len(payload["rows"]) == s["rows"], f'{s["id"]}: row count drift'
         assert payload["statusMap"], f'{s["id"]}: no statusMap'
 
-    # SITASI: raw OPEN/DRAFT must bucket to open/draft (nothing else).
+    # SITASI: target = Status Sampel "1. Utama"; hasil = Utama + Cadangan with
+    # status outside open/draft/rejected and Hasil Pendataan "1. Berhasil
+    # diwawancarai". Status buckets must stay inside the declared statusMap
+    # (a fresh scrape carries submitted/approved/final/rejected too).
     sitasi = next(x for x in manifest["surveys"] if not x["demo"])
     p = strict_json(os.path.join(SITE, "data", f'{sitasi["id"]}.json'))
     c = counts(p["rows"], p["statusMap"])
-    assert set(c) == {"open", "draft"}, f"sitasi buckets: {sorted(c)}"
-    assert c["open"] + c["draft"] == len(p["rows"]), "sitasi bucket sum mismatch"
-    print(f"  sitasi: {c}")
+    assert set(c) <= {d["key"] for d in p["statusMap"]}, f"sitasi buckets: {sorted(c)}"
+    assert sum(c.values()) == len(p["rows"]), "sitasi bucket sum mismatch"
+
+    labels = {col["key"]: col["label"] for col in p["columns"]}
+    skey = next((k for k, v in labels.items() if re.search(r"(?:kategori|status)\s*sampel", v, re.I)), None)
+    hkey = next((k for k, v in labels.items() if re.search(r"hasil pendataan", v, re.I)), None)
+    assert skey and hkey, f"sitasi progress columns missing: s={skey} h={hkey}"
+
+    kat = lambda r: str(r.get(skey) if r.get(skey) is not None else "")
+    is_utama = lambda r: bool(re.match(r"^\s*(?:1\.?\s*)?utama\b", kat(r), re.I))
+    is_cadangan = lambda r: bool(re.match(r"^\s*(?:2\.?\s*)?cadangan\b", kat(r), re.I))
+    has_value = lambda r: bool(re.match(r"^1\.?\s*berhasil diwawancarai?",
+                                        str(r.get(hkey) if r.get(hkey) is not None else ""), re.I))
+    bad = {"open", "draft", "rejected"}
+    is_hasil = lambda r: (is_utama(r) or is_cadangan(r)) and has_value(r) and \
+                         canon(r.get("status"), p["statusMap"]) not in bad
+
+    target = sum(1 for r in p["rows"] if is_utama(r))
+    done = sum(1 for r in p["rows"] if is_hasil(r))
+    utama_done = sum(1 for r in p["rows"] if is_utama(r) and is_hasil(r))
+    excluded = sum(1 for r in p["rows"] if has_value(r) and
+                   canon(r.get("status"), p["statusMap"]) in bad)
+    assert target and done, f"sitasi target/hasil empty: {target}/{done}"
+    assert done > utama_done, "sitasi hasil ignores cadangan samples"
+    assert excluded, "sitasi status exclusion is not exercised by this payload"
+    print(f"  sitasi: {c} target={target} hasil={done} (+cadangan={done - utama_done}, excluded={excluded})")
 
     # Demo: spreads across all six buckets, no 'other'.
     demo = next(x for x in manifest["surveys"] if x["demo"])

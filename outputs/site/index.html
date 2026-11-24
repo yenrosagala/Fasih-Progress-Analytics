@@ -802,7 +802,7 @@ function statusDataKey(keys){
      komoditas in words, codes) never qualify. Among those, the pendataan-outcome
      column is the one with 3..12 options that stay distinct after case-folding -
      which rejects the commodity list "01. BAWANG MERAH" vs "01. Bawang Merah" and
-     "Kategori Sampel" (2 options).
+     "Kategori/Status Sampel" (2 options).
      ponytail: ceiling = a numbered 3..12 option list that is not a status is
      mis-picked, and a status numbered "[1] ..." with inline HTML (VPEK data8) is
      missed -> falls back to the assignment panels; upgrade = declare the label per
@@ -850,36 +850,46 @@ function priorityRows(P, days){
 }
 
 /* --- Progress metric shared by prov/kab bars, donut, tables, priority list,
-   pace card and AI payload. target = Kategori Sampel "1. Utama" rows; done =
-   utama AND hasil pendataan "1. Berhasil diwawancarai" AND status >= submitted.
-   Degraded honestly: no sampel column => every row is target; sampel column
-   present but no recognized "1. Utama" value (odd format) => same fallback
-   instead of silent 0/0. done counts only target rows => done <= target.
+   pace card and AI payload. target = Kategori/Status Sampel "1. Utama" rows;
+   hasil = Utama + Cadangan with status outside open/draft/rejected and
+   Hasil Pendataan "1. Berhasil diwawancarai".
+   Degraded honestly: no sampel column => every row is target and hasil-eligible;
+   column present but no recognized "1. Utama" value (odd format) => same
+   fallback instead of silent 0/0. Cadangan can lift hasil above target.
    ponytail: sampel matched by label, hasil by value scan (payloads have no
    headers); upgrade = declare both per survey in config.py
    data_column_labels_by_survey. */
-function sampColOf(){ return COLUMNS.find(c => /kategori\s*sampel/i.test(c.label || "")); }
+const BAD_HASIL_STATUS = new Set(["open", "draft", "rejected"]);
+function sampColOf(){
+  return COLUMNS.find(c => /(?:kategori|status)\s*sampel/i.test(c.label || ""));
+}
 function progOf(rows){
   const sCol = sampColOf();
   const hk = COLUMNS.find(c => /^data\d+$/.test(c.key) &&
     groupCount(r => val(r, c.key)).some(i => /^1\.?\s*berhasil diwawancarai?/i.test(String(i.k))));
-  const utama = r => !sCol || /^1\.?\s*utama/i.test(String(val(r, sCol.key) || ""));
-  const done  = r => SUBMIT_KEYS.includes(canonStatus(val(r, "status"))) &&
-    (!hk || /^1\.?\s*berhasil diwawancarai?/i.test(String(val(r, hk.key) || "")));
+  const kat = r => sCol ? String(val(r, sCol.key) || "") : "";
+  const utama = r => !sCol || /^\s*(?:1\.?\s*)?utama\b/i.test(kat(r));
+  const cadangan = r => /^\s*(?:2\.?\s*)?cadangan\b/i.test(kat(r));
   const useU = !!sCol && rows.some(utama);
   const inT = r => !useU || utama(r);
+  const inH = r => !useU || utama(r) || cadangan(r);
+  const isHasil = r => inH(r) &&
+    !BAD_HASIL_STATUS.has(canonStatus(val(r, "status"))) &&
+    (!hk || /^1\.?\s*berhasil diwawancarai?/i.test(String(val(r, hk.key) || "")));
   const map = key => {
     const m = new Map();
-    for (const r of rows) if (inT(r)){
+    for (const r of rows){
+      const t = inT(r), d = isHasil(r);
+      if (!t && !d) continue;
       const g = gkey(r, key);
       let o = m.get(g); if (!o) m.set(g, o = { g, n: String(val(r, key) || g), target:0, done:0 });
-      o.target++; if (done(r)) o.done++;
+      if (t) o.target++; if (d) o.done++;
     }
     return m;
   };
   const tot = { target:0, done:0 };
-  for (const r of rows) if (inT(r)){ tot.target++; if (done(r)) tot.done++; }
-  return { hk, useU, map, tot, pct: o => o.target ? o.done / o.target * 100 : 0 };
+  for (const r of rows){ if (inT(r)) tot.target++; if (isHasil(r)) tot.done++; }
+  return { hk, useU, map, tot, isHasil, pct: o => o.target ? o.done / o.target * 100 : 0 };
 }
 
 function renderProgress(){
@@ -889,15 +899,15 @@ function renderProgress(){
   const hasKab = COLUMNS.some(c => c.key === "kab");
   const provs = hasProv ? aggGroups(filtered, "prov").sort((a,b) => pctSubmit(b) - pctSubmit(a) || b.total - a.total) : [];
 
-  /* Progress per prov/kab (agreed logic) via shared progOf(): target = Kategori
-     Sampel "1. Utama"; done = utama AND hasil "1. Berhasil diwawancarai" AND
-     status >= submitted. */
+  /* Progress per prov/kab via shared progOf(): target = Kategori/Status Sampel
+     "1. Utama"; hasil = utama + cadangan, status bukan open/draft/reject, dan
+     hasil pendataan "1. Berhasil diwawancarai". */
   const P = progOf(filtered);
   const pKabs = [...P.map("kab").values()].sort((a,b) => P.pct(b) - P.pct(a) || b.target - a.target || a.n.localeCompare(b.n));
   const pProvs = [...P.map("prov").values()].sort((a,b) => P.pct(b) - P.pct(a) || b.target - a.target || a.n.localeCompare(b.n));
   const ksub = "Urut dari % progress tertinggi \u2022 target: " +
-    (P.useU ? "sampel utama" : "semua sampel") + " \u2022 progress: " +
-    (P.hk ? "berhasil diwawancarai & status \u2265 submit" : "status \u2265 submit");
+    (P.useU ? "sampel utama" : "semua sampel") + " \u2022 hasil: " +
+    (P.hk ? "utama+cadangan, status \u2260 open/draft/reject, berhasil diwawancarai" : "status \u2260 open/draft/reject");
 
   /* Column picker for the right-hand breakdown panel. Native <select>, dataN
      columns only; empty option = auto (label match, else first detected enum).
@@ -930,9 +940,9 @@ function renderProgress(){
      the full span9 and the sidecol keeps assignment/priority (checkpoint-progress-tab). */
   const wide = enumKey && hasKab ? "span6" : "span9";
   sections.push(sec("Progress Keseluruhan",
-      P.tot.done.toLocaleString("id-ID") + " dari " + P.tot.target.toLocaleString("id-ID") + " sampel utama (terfilter)",
+      P.tot.done.toLocaleString("id-ID") + " hasil dari target " + P.tot.target.toLocaleString("id-ID") + " sampel utama (terfilter)",
       donut(P.tot), "span5 hero"));
-  if (hasProv) sections.push(sec("Progress per Provinsi", "progress: hasil diwawancarai & status \u2265 submit / target sampel utama",
+  if (hasProv) sections.push(sec("Progress per Provinsi", "hasil: utama+cadangan, status \u2260 open/draft/reject, berhasil diwawancarai / target sampel utama",
       tierLegend() + (pProvs.map(o => progRow(o.n, o.done, o.target)).join("") || '<div class="empty">tidak ada data</div>'), "span7"));
   if (hasKab) sections.push(sec("Progress per Kabupaten/Kota", ksub,
       tierLegend("Warna nama & label = % progress") + (pKabs.map(a => progRow(a.n, a.done, a.target)).join("") || '<div class="empty">tidak ada data</div>'), wide));
@@ -966,14 +976,14 @@ function renderPTable(){
     (withProv ? String(provOf.get(a.g) || "").localeCompare(String(provOf.get(b.g) || "")) : 0) ||
     String(a.n).localeCompare(String(b.n)));
   const enumKey = (state.graphKey && COLUMNS.some(c => c.key === state.graphKey)) ? state.graphKey : statusDataKey();
-  /* Third table (div[3], Hasil Pendataan): counts only sampel whose status is
-     submitted or beyond (submit+ = submitted/pengawas/admin); Open/Draft/Rejected
-     rows are excluded. Target column = jumlah sampel Kategori Sampel "1. Utama"
-     (semua status) - the same denominator as the kab progress bars. */
-  const subm = filtered.filter(r => SUBMIT_KEYS.includes(canonStatus(val(r, "status"))));
+  const P = progOf(filtered);
+  /* Third table (div[3], Hasil Pendataan): Utama + Cadangan, status outside
+     open/draft/reject, hasil pendataan "1. Berhasil diwawancarai". Target column
+     = jumlah sampel Kategori/Status Sampel "1. Utama" (semua status), the same
+     denominator as the kab progress bars. */
+  const subm = filtered.filter(P.isHasil);
   const eMap = new Map((enumKey ? aggEnum(subm, enumKey, gk) : []).map(o => [o.g, o]));
   const eOpts = enumKey ? [...new Set(subm.map(r => String(val(r, enumKey) || "(kosong)")))].sort() : [];
-  const P = progOf(filtered);
   const pm = P.map(gk);
   const gp = o => pm.get(o.g) || { target:0, done:0 };
   const th0 = (withProv ? '<th class="nm">' + esc((COLUMNS.find(c => c.key === "prov") || {}).label || "Provinsi") + "</th>" : "") +
@@ -1003,8 +1013,8 @@ function renderPTable(){
             eOpts.map(k => "<td>" + ((eo && eo.counts[k]) || 0) + "</td>").join("") + "</tr>";
         }).join("") + "</tbody></table></div>"
     : "";
-  el.innerHTML = cap + sec("Progress", "target: sampel utama (semua status) \u2022 kolom status: seluruh sampel \u2022 progress: hasil diwawancarai & status \u2265 submit / target", tierLegend() + t1) +
-    (t2 ? sec(LABEL[enumKey] || enumKey, "target: jumlah sampel Kategori Sampel 1. Utama (semua status) \u2022 kolom hasil: hanya status submitted+", tierLegend() + t2) : "");
+  el.innerHTML = cap + sec("Progress", "target: sampel utama (semua status) \u2022 kolom status: seluruh sampel \u2022 hasil: utama+cadangan, status \u2260 open/draft/reject, berhasil diwawancarai / target", tierLegend() + t1) +
+    (t2 ? sec(LABEL[enumKey] || enumKey, "target: jumlah sampel Kategori/Status Sampel 1. Utama (semua status) \u2022 kolom hasil: utama+cadangan, status \u2260 open/draft/reject", tierLegend() + t2) : "");
 }
 
 /* ---------------- DATA TAB ---------------- */
