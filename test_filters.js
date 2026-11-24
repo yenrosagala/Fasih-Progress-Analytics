@@ -98,20 +98,24 @@ if (!pg.includes('title="Kab Y: 1/2"')) throw new Error("Kab Y should be 1/2 (em
 if (!pg.includes("4/4")) throw new Error("prov row should be done/target progress (4/4):\n" + String(pg).slice(0, 400));
 if (!pg.includes("<span>progress</span>")) throw new Error("donut hole should show progress, not submit+");
 if (pg.includes("Komposisi Status")) throw new Error("status-composition donut title should be gone");
-/* Tabel tab div[3]: enum table counts only hasil-eligible rows */
+/* Tabel tab div[3]: semua hasil pendataan tampil, tapi Progress tetap pakai
+   utama+cadangan berhasil diwawancarai / target utama. */
 DATA[4].data10 = "3. Tidak berhasil";
 DATA.push({ kab: "Kab Y", status: "OPEN", data4: "1. Utama", data10: "4. Lain-lain" });
 filtered = DATA;
 renderPTable();
 const pt = els.ptable.innerHTML;
-const ix = pt.indexOf("target: jumlah sampel");
-if (ix < 0) throw new Error("enum table target note missing");
+const ix = pt.indexOf("semua hasil pendataan ditampilkan");
+if (ix < 0) throw new Error("enum table caption missing");
 const en = pt.slice(ix);
-if (!en.includes("<th>Target</th>")) throw new Error("div[3] should show Target column, not Total");
-if (en.includes("(kosong)")) throw new Error("empty hasil must not appear as hasil");
-if (en.includes("3. Tidak berhasil") || en.includes("4. Lain-lain")) throw new Error("non-hasil values leaked into hasil table");
+if (!en.includes("<th>Target</th>") || !en.includes("<th>Progress</th>")) throw new Error("div[3] should show Target and Progress columns");
+if (en.includes("(kosong)")) throw new Error("empty hasil must not appear as hasil column");
+for (const v of ["1. Berhasil diwawancarai", "3. Tidak berhasil", "4. Lain-lain"])
+  if (!en.includes("<th>" + v + "</th>")) throw new Error("all hasil values must appear, missing: " + v);
 if (!en.includes("<td>2</td>")) throw new Error("Kab X target should be 2 utama rows, got:\n" + en.slice(0, 300));
 if (!en.includes("<td>3</td>")) throw new Error("Kab Y target should be 3 utama rows, got:\n" + en.slice(0, 300));
+if (!en.includes("<td>150.0%</td>")) throw new Error("enum progress must stay berhasil/target: Kab X 150.0%");
+if (!en.includes("<td>0.0%</td>")) throw new Error("non-berhasil hasil must not count as progress: Kab Y 0.0%");
 /* div[2] Progress table: Target = utama, Progress = done/target */
 const t1ix = pt.indexOf("<th>Target</th>");
 if (t1ix < 0 || t1ix > ix) throw new Error("div[2] should show Target column before the div[3] note");
@@ -135,7 +139,7 @@ const jrow = (pg.match(/title="JAYAPURA: \d/g) || []).length;
 if (jrow !== 2) throw new Error("progress must group by kab_code, not name: " + jrow + " JAYAPURA rows:\n" + String(pg).slice(0, 400));
 renderPTable();
 const pth = els.ptable.innerHTML;
-const t1a = pth.indexOf("<th>Target</th>"), t1b = pth.indexOf("target: jumlah sampel");
+const t1a = pth.indexOf("<th>Target</th>"), t1b = pth.indexOf("semua hasil pendataan ditampilkan");
 const jtab = ((pth.slice(t1a, t1b).match(/>JAYAPURA</g)) || []).length;
 if (jtab !== 2) throw new Error("PTable must show 2 rows labeled by name, got " + jtab);
 

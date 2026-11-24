@@ -1271,13 +1271,13 @@ function renderPTable(){
     : (a,b) => String(a.n).localeCompare(String(b.n)));
   const enumKey = (state.graphKey && COLUMNS.some(c => c.key === state.graphKey)) ? state.graphKey : statusDataKey();
   const P = progOf(filtered);
-  /* Third table (div[3], Hasil Pendataan): Utama + Cadangan dengan hasil
-     pendataan "1. Berhasil diwawancarai" (status assignment diabaikan, seperti
-     monitoring FASIH). Target column = jumlah sampel Kategori/Status Sampel
-     "1. Utama" (semua status), same denominator as the kab progress bars. */
-  const subm = filtered.filter(P.isHasil);
-  const eMap = new Map((enumKey ? aggEnum(subm, enumKey, gk) : []).map(o => [o.g, o]));
-  const eOpts = enumKey ? [...new Set(subm.map(r => String(val(r, enumKey) || "(kosong)")))].sort() : [];
+  /* Third table (div[3], Hasil Pendataan): tampilkan semua nilai hasil pendataan
+     yang terisi, bukan hanya "1. Berhasil diwawancarai". Kolom Progress tetap
+     utama+cadangan dengan hasil "1. Berhasil diwawancarai" / target sampel utama,
+     status assignment diabaikan. Kosong sengaja tidak jadi kolom hasil. */
+  const eRows = enumKey ? filtered.filter(r => val(r, enumKey) !== "") : [];
+  const eMap = new Map((enumKey ? aggEnum(eRows, enumKey, gk) : []).map(o => [o.g, o]));
+  const eOpts = enumKey ? [...new Set(eRows.map(r => String(val(r, enumKey))))].sort() : [];
   const pm = P.map(gk);
   const gp = o => pm.get(o.g) || { target:0, done:0 };
   const th0 = (withProv ? '<th class="nm">' + esc((COLUMNS.find(c => c.key === "prov") || {}).label || "Provinsi") + "</th>" : "") +
@@ -1300,16 +1300,17 @@ function renderPTable(){
         "<td>" + P.pct(gp(o)).toFixed(1) + "%</td></tr>").join("") +
     "</tbody></table></div>";
   const t2 = eOpts.length
-    ? '<div class="tblwrap"><table><thead><tr>' + th0 + "<th>Target</th>" +
+    ? '<div class="tblwrap"><table><thead><tr>' + th0 + "<th>Target</th><th>Progress</th>" +
         eOpts.map(o => "<th>" + esc(o) + "</th>").join("") + "</tr></thead><tbody>" +
         rows.map(o => {
           const eo = eMap.get(o.g);
-          return "<tr>" + td0(o) + "<td>" + gp(o).target + "</td>" +
+          return "<tr>" + td0(o) + "<td>" + gp(o).target + "</td><td>" +
+            P.pct(gp(o)).toFixed(1) + "%</td>" +
             eOpts.map(k => "<td>" + ((eo && eo.counts[k]) || 0) + "</td>").join("") + "</tr>";
         }).join("") + "</tbody></table></div>"
     : "";
   el.innerHTML = cap + sec("Progress", "target: sampel utama (semua status) \u2022 kolom status: seluruh sampel \u2022 hasil: utama+cadangan, berhasil diwawancarai / target", tierLegend() + t1) +
-    (t2 ? sec(LABEL[enumKey] || enumKey, "target: jumlah sampel Kategori/Status Sampel 1. Utama (semua status) \u2022 kolom hasil: utama+cadangan, berhasil diwawancarai", tierLegend() + t2) : "");
+    (t2 ? sec(LABEL[enumKey] || enumKey, "semua hasil pendataan ditampilkan \u2022 progress: utama+cadangan, berhasil diwawancarai / target sampel utama (semua status)", tierLegend() + t2) : "");
 }
 
 /* ---------------- DATA TAB ---------------- */
